@@ -10,6 +10,8 @@ import 'vendors/vendors_screen.dart';
 import 'vendors/vendor_payouts_screen.dart';
 import 'settings/settings_screen.dart';
 import 'services/services_screen.dart';
+import 'service_catalog/service_categories_screen.dart';
+import 'service_catalog/service_packages_screen.dart';
 import 'orders/orders_screen.dart';
 import 'bookings/bookings_screen.dart';
 import 'categories/categories_screen.dart';
@@ -50,6 +52,8 @@ class _AdminShellState extends ConsumerState<AdminShell> {
     _NavItem('Orders', Icons.receipt_long_outlined, OrdersScreen()),
     _NavItem('Bookings', Icons.build_outlined, BookingsScreen()),
     _NavItem('Services', Icons.handyman_outlined, ServicesScreen()),
+    _NavItem('Service Categories', Icons.account_tree_outlined, ServiceCategoriesScreen()),
+_NavItem('Service Packages', Icons.inventory_2_outlined, ServicePackagesScreen()),
     _NavItem('Categories', Icons.category_outlined, CategoriesScreen()),
     _NavItem('Promos', Icons.local_offer_outlined, PromosScreen()),
     _NavItem('Returns', Icons.assignment_return_outlined, ReturnsScreen()),
