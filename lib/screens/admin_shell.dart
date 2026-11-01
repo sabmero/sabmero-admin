@@ -17,6 +17,7 @@ import 'bookings/bookings_screen.dart';
 import 'categories/categories_screen.dart';
 import 'promos/promos_screen.dart';
 import 'returns/returns_screen.dart';
+import '../widgets/notification_bell.dart';
 
 // Responsive layout: permanent sidebar on wide screens, hamburger drawer on
 // phones/narrow screens.
@@ -174,6 +175,28 @@ class _AdminShellState extends ConsumerState<AdminShell> {
     );
   }
 
+  // Jump to the screen related to a tapped notification.
+  void _openFromNotification(NotificationItem n) {
+    final t = n.type.toLowerCase();
+    String? label;
+    if (t.startsWith('vendor_request')) {
+      label = 'Vendor Requests';
+    } else if (t.startsWith('order')) {
+      label = 'Orders';
+    } else if (t.startsWith('booking')) {
+      label = 'Bookings';
+    } else if (t == 'vendorpayment') {
+      label = 'Vendor Payouts';
+    } else if (t.contains('payment')) {
+      label = 'Payments';
+    } else if (t == 'promo') {
+      label = 'Promos';
+    }
+    if (label == null) return;
+    final i = _items.indexWhere((e) => e.label == label);
+    if (i >= 0) setState(() => _index = i);
+  }
+
   Widget _topBar(bool wide, WidgetRef ref) {
     final nameAsync = ref.watch(adminNameProvider);
     return Container(
@@ -200,6 +223,8 @@ class _AdminShellState extends ConsumerState<AdminShell> {
               ),
             ),
           ),
+          NotificationBell(onOpen: _openFromNotification),
+          const SizedBox(width: 4),
           const Icon(Icons.account_circle_outlined, color: AppColors.textMuted),
           const SizedBox(width: 8),
           nameAsync.maybeWhen(
