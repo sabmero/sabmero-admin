@@ -21,7 +21,7 @@ jobs:
 
       - name: Prepare SSH
         env:
-          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SSH_KEY: ${{ secrets.SERVER_KEY }}
           HOST: ${{ secrets.SERVER_HOST }}
         run: |
           mkdir -p ~/.ssh
