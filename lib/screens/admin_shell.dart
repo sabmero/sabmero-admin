@@ -8,6 +8,7 @@ import 'users/users_screen.dart';
 import 'vendors/vendor_requests_screen.dart';
 import 'vendors/vendors_screen.dart';
 import 'vendors/vendor_payouts_screen.dart';
+import 'technicians/technician_payouts_screen.dart';
 import 'settings/settings_screen.dart';
 import 'services/services_screen.dart';
 import 'services/service_categories_screen.dart';
@@ -68,6 +69,7 @@ class _AdminShellState extends ConsumerState<AdminShell> {
     _NavItem('Returns', Icons.assignment_return_outlined, ReturnsScreen()),
     _NavItem('Payments', Icons.payments_outlined, PaymentsScreen()),
     _NavItem('Vendor Payouts', Icons.account_balance_wallet_outlined, VendorPayoutsScreen()),
+    _NavItem('Staff Payouts', Icons.engineering_outlined, TechnicianPayoutsScreen()),
     _NavItem('Settings', Icons.settings_outlined, SettingsScreen()),
   ];
 
@@ -185,6 +187,8 @@ class _AdminShellState extends ConsumerState<AdminShell> {
       label = 'Orders';
     } else if (t.startsWith('booking')) {
       label = 'Bookings';
+    } else if (t.startsWith('technicianpayment')) {
+      label = 'Staff Payouts';
     } else if (t == 'vendorpayment') {
       label = 'Vendor Payouts';
     } else if (t.contains('payment')) {
