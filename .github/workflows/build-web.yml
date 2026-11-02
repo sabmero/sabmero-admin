@@ -1,21 +1,62 @@
-name: Build admin web
+name: Build and deploy admin web
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
+concurrency:
+  group: deploy-admin
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-      - run: flutter --version
       - run: flutter pub get
-      - run: flutter analyze --no-fatal-infos --no-fatal-warnings || true
       - run: flutter build web --release
-      - uses: actions/upload-artifact@v4
-        with:
-          name: admin-web
-          path: build/web
+
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload build to server
+        env:
+          HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          SSH="ssh -i ~/.ssh/id_deploy root@$HOST"
+          $SSH "rm -rf /root/sabmero-admin-web/build/web && mkdir -p /root/sabmero-admin-web/build"
+          scp -i ~/.ssh/id_deploy -r build/web root@$HOST:/root/sabmero-admin-web/build/
+
+      - name: Rebuild and restart container
+        env:
+          HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          ssh -i ~/.ssh/id_deploy root@$HOST '
+            set -e
+            cd /root/sabmero-admin-web
+            docker build -f Dockerfile.web -t sabmero-admin-web .
+            docker rm -f sabmero-admin-web || true
+            docker run -d --name sabmero-admin-web --network sabmero_net --restart unless-stopped sabmero-admin-web
+            sleep 2
+            docker exec panels-proxy nginx -s reload
+          '
+
+      - name: Purge Cloudflare cache
+        env:
+          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: |
+          if [ -z "$CF_ZONE_ID" ] || [ -z "$CF_API_TOKEN" ]; then echo "Cloudflare secrets not set - skipping purge"; exit 0; fi
+          curl -sS -X POST "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/purge_cache" \
+            -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
+            --data '{"purge_everything":true}'
