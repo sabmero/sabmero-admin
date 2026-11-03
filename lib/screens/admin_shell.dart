@@ -187,7 +187,7 @@ class _AdminShellState extends ConsumerState<AdminShell> {
       label = 'Orders';
     } else if (t.startsWith('booking')) {
       label = 'Bookings';
-    } else if (t.startsWith('technicianpayment')) {
+    } else if (t.startsWith('technicianpayment') || t.startsWith('remittance')) {
       label = 'Staff Payouts';
     } else if (t == 'vendorpayment') {
       label = 'Vendor Payouts';
