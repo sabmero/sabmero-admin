@@ -16,8 +16,22 @@ class TechnicianPayoutSummary {
   final int technicianId, completedJobs;
   final String name, phone, role;
   final double totalServiceCharge, totalPaid, deliveryFees;
+  final double cashCollected, remitted, cashHeld;
+  final int pendingRemittances;
+  final String? paymentQrPath;
+  final double commissionPercent, earned, payable;
   TechnicianPayoutSummary.fromJson(Map<String, dynamic> j)
-      : technicianId = _i(j['technicianId']),
+      : commissionPercent = _d(j['commissionPercent']),
+        earned = _d(j['earned']),
+        payable = _d(j['payable']),
+        cashCollected = _d(j['cashCollected']),
+        remitted = _d(j['remitted']),
+        cashHeld = _d(j['cashHeld']),
+        pendingRemittances = _i(j['pendingRemittances']),
+        paymentQrPath = (j['paymentQrPath']?.toString().isEmpty ?? true)
+            ? null
+            : j['paymentQrPath'].toString(),
+        technicianId = _i(j['technicianId']),
         completedJobs = _i(j['completedJobs']),
         name = _s(j['name']),
         phone = _s(j['phone']),
@@ -44,6 +58,26 @@ class TechnicianPaymentRow {
         note = j['note']?.toString(),
         amountInWords = j['amountInWords']?.toString(),
         screenshotPath = j['screenshotPath']?.toString();
+}
+
+// Money a technician / rider handed over to SabMero (needs admin verification).
+class RemittanceRow {
+  final int id;
+  final String staffName, role, method, status, createdAt;
+  final double amount;
+  final String? amountInWords, screenshotPath, note, rejectReason;
+  RemittanceRow.fromJson(Map<String, dynamic> j)
+      : id = _i(j['id']),
+        staffName = _s(j['staffName']),
+        role = _s(j['role']),
+        method = _s(j['method']).isEmpty ? 'Cash' : _s(j['method']),
+        status = _s(j['status']).isEmpty ? 'Pending' : _s(j['status']),
+        createdAt = _s(j['createdAt']),
+        amount = _d(j['amount']),
+        amountInWords = j['amountInWords']?.toString(),
+        screenshotPath = j['screenshotPath']?.toString(),
+        note = j['note']?.toString(),
+        rejectReason = j['rejectReason']?.toString();
 }
 
 // What technicians collected from customers (completed jobs).
@@ -109,6 +143,20 @@ final technicianPayoutsProvider =
   return _list(res.data).map(TechnicianPayoutSummary.fromJson).toList();
 });
 
+final remittancesProvider =
+    FutureProvider.autoDispose<List<RemittanceRow>>((ref) async {
+  final res = await ApiClient.instance.get('/staff-remittances');
+  return _list(res.data).map(RemittanceRow.fromJson).toList();
+});
+
+// (rider %, technician %)
+final commissionProvider =
+    FutureProvider.autoDispose<(double, double)>((ref) async {
+  final res = await ApiClient.instance.get('/technician-payments/commission');
+  final m = res.data is Map ? Map<String, dynamic>.from(res.data as Map) : <String, dynamic>{};
+  return (_d(m['riderPercent']), _d(m['technicianPercent']));
+});
+
 final technicianHistoryProvider =
     FutureProvider.autoDispose<List<TechnicianPaymentRow>>((ref) async {
   final res = await ApiClient.instance.get('/technician-payments/history');
@@ -148,6 +196,8 @@ class _TechnicianPayoutsScreenState
 
   void _refresh(WidgetRef ref) {
     ref.invalidate(technicianPayoutsProvider);
+    ref.invalidate(remittancesProvider);
+    ref.invalidate(commissionProvider);
     ref.invalidate(technicianHistoryProvider);
     ref.invalidate(collectionsProvider);
   }
@@ -192,6 +242,10 @@ class _TechnicianPayoutsScreenState
               ),
             ],
           ),
+          _commissionCard(context, ref),
+          const SizedBox(height: 24),
+          _remittancesCard(context, ref),
+          const SizedBox(height: 24),
           _collectionsCard(context, ref),
           const SizedBox(height: 24),
           _techniciansCard(context, ref),
@@ -365,6 +419,154 @@ class _TechnicianPayoutsScreenState
     );
   }
 
+  // ── Hand-overs staff sent to SabMero: verify / reject ──
+  Future<void> _verify(RemittanceRow r) async {
+    final res = await ApiClient.instance.post('/staff-remittances/${r.id}/verify');
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(res.message ?? (res.ok ? 'Verified.' : 'Failed.')),
+      backgroundColor: res.ok ? AppColors.success : AppColors.danger,
+    ));
+    _refresh(ref);
+  }
+
+  Future<void> _reject(RemittanceRow r) async {
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (_) => const _ReasonDialog(),
+    );
+    if (reason == null) return;
+    final res = await ApiClient.instance
+        .post('/staff-remittances/${r.id}/reject', body: {'reason': reason});
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(res.message ?? (res.ok ? 'Rejected.' : 'Failed.')),
+      backgroundColor: res.ok ? AppColors.success : AppColors.danger,
+    ));
+    _refresh(ref);
+  }
+
+  Widget _remittancesCard(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(remittancesProvider);
+    return _card(
+      'Money handed over to SabMero (verify)',
+      async.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => Text('Failed to load: $e'),
+        data: (rows) => rows.isEmpty
+            ? _empty('No hand-overs yet.')
+            : SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: DataTable(
+                  columns: const [
+                    DataColumn(label: Text('Date')),
+                    DataColumn(label: Text('Staff')),
+                    DataColumn(label: Text('Amount')),
+                    DataColumn(label: Text('Method')),
+                    DataColumn(label: Text('In words / proof')),
+                    DataColumn(label: Text('Status')),
+                    DataColumn(label: Text('Action')),
+                  ],
+                  rows: rows
+                      .map((r) => DataRow(cells: [
+                            DataCell(Text(_dateTime(r.createdAt))),
+                            DataCell(Text('${r.staffName} (${r.role})')),
+                            DataCell(Text('Rs ${r.amount.toStringAsFixed(0)}')),
+                            DataCell(Text(r.method)),
+                            DataCell((r.screenshotPath != null &&
+                                    r.screenshotPath!.isNotEmpty)
+                                ? TextButton.icon(
+                                    icon: const Icon(Icons.image, size: 16),
+                                    label: const Text('Screenshot'),
+                                    onPressed: () =>
+                                        _viewProof(context, r.screenshotPath!),
+                                  )
+                                : SizedBox(
+                                    width: 200,
+                                    child: Text(r.amountInWords ?? '—',
+                                        overflow: TextOverflow.ellipsis))),
+                            DataCell(Tooltip(
+                                message: r.rejectReason ?? '',
+                                child: StatusBadge(r.status))),
+                            DataCell(r.status == 'Pending'
+                                ? Row(children: [
+                                    FilledButton(
+                                      onPressed: () => _verify(r),
+                                      child: const Text('Verify'),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    OutlinedButton(
+                                      onPressed: () => _reject(r),
+                                      child: const Text('Reject'),
+                                    ),
+                                  ])
+                                : const Text('—')),
+                          ]))
+                      .toList(),
+                ),
+              ),
+      ),
+    );
+  }
+
+  // Set / replace a staff member's own payout QR.
+  Future<void> _setQr(TechnicianPayoutSummary t) async {
+    final picked =
+        await FilePicker.pickFiles(type: FileType.image, withData: true);
+    final file = picked?.files.firstOrNull;
+    if (file == null || file.bytes == null) return;
+    final up = await ref
+        .read(adminServiceProvider)
+        .uploadPaymentScreenshot(file.bytes!, file.name);
+    if (!mounted) return;
+    if (!up.ok || up.path == null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(up.message), backgroundColor: AppColors.danger));
+      return;
+    }
+    final res = await ApiClient.instance.put(
+        '/staff-remittances/staff/${t.technicianId}/qr',
+        body: {'qrImagePath': up.path});
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(res.message ?? (res.ok ? 'QR saved.' : 'Failed.')),
+      backgroundColor: res.ok ? AppColors.success : AppColors.danger,
+    ));
+    _refresh(ref);
+  }
+
+  Widget _commissionCard(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(commissionProvider);
+    return _card(
+      'Commission (what staff earn)',
+      async.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => Text('Failed to load: $e'),
+        data: (c) => Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Rider: ${c.$1.toStringAsFixed(0)}% of delivery fee   •   '
+                'Technician: ${c.$2.toStringAsFixed(0)}% of service charge',
+              ),
+            ),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.edit, size: 16),
+              label: const Text('Change'),
+              onPressed: () async {
+                final ok = await showDialog<bool>(
+                  context: context,
+                  builder: (_) => _CommissionDialog(rider: c.$1, tech: c.$2),
+                );
+                if (ok == true) _refresh(ref);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _chip(String label, double value, Color color) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
@@ -410,7 +612,11 @@ class _TechnicianPayoutsScreenState
                     DataColumn(label: Text('Jobs / Deliveries')),
                     DataColumn(label: Text('Charges / COD')),
                     DataColumn(label: Text('Delivery fees')),
+                    DataColumn(label: Text('Earned')),
                     DataColumn(label: Text('Total paid')),
+                    DataColumn(label: Text('To pay')),
+                    DataColumn(label: Text('Cash held')),
+                    DataColumn(label: Text('Payout QR')),
                     DataColumn(label: Text('Action')),
                   ],
                   rows: rows
@@ -426,8 +632,35 @@ class _TechnicianPayoutsScreenState
                             DataCell(Text(t.isRider
                                 ? 'Rs ${t.deliveryFees.toStringAsFixed(0)}'
                                 : '—')),
+                            DataCell(Text(
+                                'Rs ${t.earned.toStringAsFixed(0)} (${t.commissionPercent.toStringAsFixed(0)}%)')),
                             DataCell(
                                 Text('Rs ${t.totalPaid.toStringAsFixed(0)}')),
+                            DataCell(Text('Rs ${t.payable.toStringAsFixed(0)}',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w700))),
+                            DataCell(Text(
+                                'Rs ${t.cashHeld.toStringAsFixed(0)}'
+                                '${t.pendingRemittances > 0 ? '  (${t.pendingRemittances} pending)' : ''}',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    color: t.cashHeld > 0
+                                        ? AppColors.warning
+                                        : null))),
+                            DataCell(Row(children: [
+                              if (t.paymentQrPath != null)
+                                TextButton(
+                                  onPressed: () =>
+                                      _viewProof(context, t.paymentQrPath!),
+                                  child: const Text('View'),
+                                ),
+                              TextButton(
+                                onPressed: () => _setQr(t),
+                                child: Text(t.paymentQrPath == null
+                                    ? 'Add QR'
+                                    : 'Change'),
+                              ),
+                            ])),
                             DataCell(FilledButton.icon(
                               onPressed: () async {
                                 final ok = await showDialog<bool>(
@@ -527,7 +760,10 @@ class _PayDialog extends ConsumerStatefulWidget {
 }
 
 class _PayDialogState extends ConsumerState<_PayDialog> {
-  final _amountCtrl = TextEditingController();
+  late final _amountCtrl = TextEditingController(
+      text: widget.tech.payable > 0
+          ? widget.tech.payable.toStringAsFixed(0)
+          : '');
   final _noteCtrl = TextEditingController();
   final _wordsCtrl = TextEditingController();
   String _method = 'Cash';
@@ -673,6 +909,28 @@ class _PayDialogState extends ConsumerState<_PayDialog> {
                 ),
               ),
               const SizedBox(height: 12),
+              if (_method == 'Online' && t.paymentQrPath != null) ...[
+                const Text('Scan this QR to pay:',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 6),
+                Center(
+                  child: Image.network(
+                    t.paymentQrPath!.startsWith('http')
+                        ? t.paymentQrPath!
+                        : '${AppConfig.baseUrl}${t.paymentQrPath!}',
+                    height: 200,
+                    errorBuilder: (_, __, ___) =>
+                        const Text('QR image could not be loaded.'),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ] else if (_method == 'Online')
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: Text(
+                      'No QR set for this person — add it with "Add QR" in the table.',
+                      style: TextStyle(color: AppColors.textMuted)),
+                ),
               if (_method == 'Online')
                 OutlinedButton.icon(
                   onPressed: _busy ? null : _pickShot,
@@ -701,6 +959,127 @@ class _PayDialogState extends ConsumerState<_PayDialog> {
                       strokeWidth: 2, color: Colors.white))
               : const Text('Record Payment'),
         ),
+      ],
+    );
+  }
+}
+
+
+// ── Reject reason dialog (State owns the controller) ─────────────────────────
+class _ReasonDialog extends StatefulWidget {
+  const _ReasonDialog();
+
+  @override
+  State<_ReasonDialog> createState() => _ReasonDialogState();
+}
+
+class _ReasonDialogState extends State<_ReasonDialog> {
+  final _ctrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Reject hand-over'),
+      content: TextField(
+        controller: _ctrl,
+        maxLength: 200,
+        decoration: const InputDecoration(
+          labelText: 'Reason (optional)',
+          hintText: 'e.g. Amount did not arrive',
+          border: OutlineInputBorder(),
+        ),
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        FilledButton(
+            onPressed: () => Navigator.pop(context, _ctrl.text.trim()),
+            child: const Text('Reject')),
+      ],
+    );
+  }
+}
+
+
+// ── Commission dialog (State owns the controllers) ───────────────────────────
+class _CommissionDialog extends StatefulWidget {
+  const _CommissionDialog({required this.rider, required this.tech});
+  final double rider, tech;
+
+  @override
+  State<_CommissionDialog> createState() => _CommissionDialogState();
+}
+
+class _CommissionDialogState extends State<_CommissionDialog> {
+  late final _riderCtrl =
+      TextEditingController(text: widget.rider.toStringAsFixed(0));
+  late final _techCtrl =
+      TextEditingController(text: widget.tech.toStringAsFixed(0));
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _riderCtrl.dispose();
+    _techCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final r = double.tryParse(_riderCtrl.text.trim());
+    final t = double.tryParse(_techCtrl.text.trim());
+    if (r == null || t == null || r < 0 || r > 100 || t < 0 || t > 100) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Enter percentages between 0 and 100.')));
+      return;
+    }
+    setState(() => _busy = true);
+    final res = await ApiClient.instance.put('/technician-payments/commission',
+        body: {'riderPercent': r, 'technicianPercent': t});
+    if (!mounted) return;
+    setState(() => _busy = false);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(res.message ?? (res.ok ? 'Saved.' : 'Failed.')),
+      backgroundColor: res.ok ? AppColors.success : AppColors.danger,
+    ));
+    if (res.ok) Navigator.pop(context, true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Commission %'),
+      content: SizedBox(
+        width: 360,
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(
+            controller: _riderCtrl,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+                labelText: 'Rider — % of delivery fee',
+                border: OutlineInputBorder()),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _techCtrl,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+                labelText: 'Technician — % of service charge',
+                border: OutlineInputBorder()),
+          ),
+        ]),
+      ),
+      actions: [
+        TextButton(
+            onPressed: _busy ? null : () => Navigator.pop(context, false),
+            child: const Text('Cancel')),
+        FilledButton(
+            onPressed: _busy ? null : _save, child: const Text('Save')),
       ],
     );
   }
