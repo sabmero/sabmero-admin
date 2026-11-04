@@ -332,7 +332,7 @@ class _TechnicianPayoutsScreenState
                 else
                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
-                    child: DataTable(
+                    child: AdaptiveTable(
                       columns: const [
                         DataColumn(label: Text('Name')),
                         DataColumn(label: Text('Role')),
@@ -371,7 +371,7 @@ class _TechnicianPayoutsScreenState
                   const SizedBox(height: 8),
                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
-                    child: DataTable(
+                    child: AdaptiveTable(
                       columns: const [
                         DataColumn(label: Text('Time')),
                         DataColumn(label: Text('Job')),
@@ -457,7 +457,7 @@ class _TechnicianPayoutsScreenState
             ? _empty('No hand-overs yet.')
             : SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
-                child: DataTable(
+                child: AdaptiveTable(
                   columns: const [
                     DataColumn(label: Text('Date')),
                     DataColumn(label: Text('Staff')),
@@ -604,7 +604,7 @@ class _TechnicianPayoutsScreenState
             ? _empty('No technicians yet.')
             : SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
-                child: DataTable(
+                child: AdaptiveTable(
                   columns: const [
                     DataColumn(label: Text('Name')),
                     DataColumn(label: Text('Role')),
@@ -698,7 +698,7 @@ class _TechnicianPayoutsScreenState
             ? _empty('No payments recorded yet.')
             : SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
-                child: DataTable(
+                child: AdaptiveTable(
                   columns: const [
                     DataColumn(label: Text('Date')),
                     DataColumn(label: Text('Name')),
