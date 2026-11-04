@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/api_client.dart';
 import '../../core/app_config.dart';
 import '../../models/models.dart';
 import '../../providers/providers.dart';
@@ -58,6 +59,7 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
                   DataColumn(label: Text('Time slot')),
                   DataColumn(label: Text('Address')),
                   DataColumn(label: Text('Payment')),
+                  DataColumn(label: Text('To collect')),
                   DataColumn(label: Text('From order')),
                   DataColumn(label: Text('Status')),
                   DataColumn(label: Text('Actions')),
@@ -78,6 +80,9 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
       DataCell(Text(b.timeSlot)),
       DataCell(SizedBox(width: 180, child: Text(b.serviceAddress, overflow: TextOverflow.ellipsis))),
       DataCell(Text(b.paymentMethod)),
+      DataCell(Text(b.serviceCharge == null
+          ? '—'
+          : 'Rs ${b.serviceCharge!.toStringAsFixed(0)}')),
       DataCell(b.relatedOrderId != null
           ? Tooltip(
               message: 'Order #${b.relatedOrderId}',
@@ -96,6 +101,17 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
             child: const Text('View', style: TextStyle(fontSize: 12)),
           ),
           const SizedBox(width: 6),
+          if (b.status != 'Completed') ...[
+            OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                minimumSize: const Size(0, 32),
+              ),
+              onPressed: () => _setAmount(b),
+              child: const Text('Set amount', style: TextStyle(fontSize: 12)),
+            ),
+            const SizedBox(width: 6),
+          ],
           if (b.status != 'Completed')
             OutlinedButton(
               style: OutlinedButton.styleFrom(
@@ -161,6 +177,8 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
                 _kv('Time slot', b.timeSlot),
                 _kv('Address', b.serviceAddress),
                 _kv('Payment', b.paymentMethod),
+                _kv(b.status == 'Completed' ? 'Collected' : 'To collect',
+                    b.serviceCharge == null ? 'not set' : 'Rs ${b.serviceCharge!.toStringAsFixed(0)}'),
                 const SizedBox(height: 12),
                 const Text('Problem Description',
                     style: TextStyle(fontWeight: FontWeight.w700)),
@@ -246,6 +264,19 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
         ),
       );
 
+  Future<void> _setAmount(BookingRow b) async {
+    final v = await showDialog<double>(
+      context: context,
+      builder: (_) => _AmountDialog(initial: b.serviceCharge),
+    );
+    if (v == null) return;
+    final res = await ApiClient.instance
+        .put('/technician-payments/bookings/${b.id}/amount', body: {'amount': v});
+    if (!mounted) return;
+    toast(context, res.message ?? (res.ok ? 'Saved' : 'Failed'), error: !res.ok);
+    if (res.ok) _refresh();
+  }
+
   Future<void> _assignTech(BookingRow b) async {
     final techs = await ref.read(techniciansProvider.future);
     if (!mounted) return;
@@ -280,5 +311,49 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
     if (!mounted) return;
     toast(context, res.ok ? (res.message ?? 'Assigned') : (res.message ?? 'Failed'), error: !res.ok);
     if (res.ok) _refresh();
+  }
+}
+
+
+// Amount the customer must pay (State owns the controller).
+class _AmountDialog extends StatefulWidget {
+  const _AmountDialog({this.initial});
+  final double? initial;
+
+  @override
+  State<_AmountDialog> createState() => _AmountDialogState();
+}
+
+class _AmountDialogState extends State<_AmountDialog> {
+  late final _ctrl = TextEditingController(
+      text: widget.initial == null ? '' : widget.initial!.toStringAsFixed(0));
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Amount to collect from customer'),
+      content: TextField(
+        controller: _ctrl,
+        keyboardType: TextInputType.number,
+        decoration: const InputDecoration(prefixText: 'Rs ', labelText: 'Amount'),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        FilledButton(
+          onPressed: () {
+            final v = double.tryParse(_ctrl.text.trim());
+            if (v == null || v < 0) return;
+            Navigator.pop(context, v);
+          },
+          child: const Text('Save'),
+        ),
+      ],
+    );
   }
 }
