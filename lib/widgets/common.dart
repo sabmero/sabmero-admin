@@ -139,8 +139,8 @@ class TableCard extends StatelessWidget {
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: ConstrainedBox(
-            constraints: BoxConstraints(minWidth: MediaQuery.of(context).size.width - 320),
-            child: DataTable(columns: columns, rows: rows),
+            constraints: BoxConstraints(minWidth: (MediaQuery.of(context).size.width - 320).clamp(0.0, 4000.0).toDouble()),
+            child: AdaptiveTable(columns: columns, rows: rows),
           ),
         ),
       ),
@@ -196,4 +196,69 @@ void toast(BuildContext context, String message, {bool error = false}) {
     backgroundColor: error ? AppColors.danger : AppColors.primary,
     behavior: SnackBarBehavior.floating,
   ));
+}
+
+// On wide screens a normal DataTable; on a phone each row becomes a small card
+// (label: value) so nothing is cut off or needs sideways scrolling.
+class AdaptiveTable extends StatelessWidget {
+  final List<DataColumn> columns;
+  final List<DataRow> rows;
+  const AdaptiveTable({super.key, required this.columns, required this.rows});
+
+  static String _label(DataColumn c) {
+    final w = c.label;
+    return w is Text ? (w.data ?? '') : '';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final width = MediaQuery.of(context).size.width;
+    if (width >= 760) return DataTable(columns: columns, rows: rows);
+
+    final cardWidth = (width - 120).clamp(240.0, 600.0).toDouble();
+    return SizedBox(
+      width: cardWidth,
+      child: Column(
+        children: [
+          for (final r in rows)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (var i = 0; i < r.cells.length && i < columns.length; i++)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(
+                            width: 92,
+                            child: Text(_label(columns[i]),
+                                style: const TextStyle(
+                                    fontSize: 12, color: AppColors.textMuted)),
+                          ),
+                          Expanded(
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: r.cells[i].child,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }
