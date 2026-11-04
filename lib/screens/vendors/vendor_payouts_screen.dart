@@ -81,7 +81,7 @@ class VendorPayoutsScreen extends ConsumerWidget {
                     )
                   : SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
-                      child: DataTable(
+                      child: AdaptiveTable(
                         columns: const [
                           DataColumn(label: Text('Vendor')),
                           DataColumn(label: Text('Phone')),
@@ -190,7 +190,7 @@ class VendorPayoutsScreen extends ConsumerWidget {
                     )
                   : SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
-                      child: DataTable(
+                      child: AdaptiveTable(
                         columns: const [
                           DataColumn(label: Text('Date')),
                           DataColumn(label: Text('Vendor')),
