@@ -170,7 +170,7 @@ class PaymentsScreen extends ConsumerWidget {
                     )
                   : SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
-                      child: DataTable(
+                      child: AdaptiveTable(
                         columns: const [
                           DataColumn(label: Text('Type')),
                           DataColumn(label: Text('Ref')),
